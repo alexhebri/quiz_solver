@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hebri Oracle Quiz Solver</title>
+    <style>
+      :root {
+        --bg: #0f1117;
+        --panel: #171a23;
+        --panel-2: #1d2230;
+        --text: #e6e8ef;
+        --muted: #a3a9b8;
+        --accent: #64d2ff;
+        --accent-2: #4fb477;
+        --error: #ff6b6b;
+        --border: #2a3042;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        width: 340px;
+      }
+
+      .wrap {
+        padding: 16px 16px 14px;
+      }
+
+      h1 {
+        font-size: 16px;
+        margin: 0 0 12px;
+        letter-spacing: 0.3px;
+      }
+
+      .field {
+        margin-bottom: 10px;
+      }
+
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+
+      input[type="password"],
+      input[type="text"] {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        font-size: 13px;
+      }
+
+      button {
+        width: 100%;
+        padding: 10px 12px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: #0b0d12;
+        border: none;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+
+      .status {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .status strong {
+        color: var(--accent);
+      }
+
+      .error {
+        color: var(--error);
+      }
+
+      .log {
+        margin-top: 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: #0c0f16;
+        border: 1px dashed var(--border);
+        color: var(--muted);
+        font-size: 11px;
+        min-height: 36px;
+        white-space: pre-wrap;
+      }
+
+      .tip {
+        margin-top: 10px;
+        font-size: 10px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Hebri Oracle Quiz Solver</h1>
+
+      <div class="field">
+        <label for="apiKey">OpenRouter API Key</label>
+        <input id="apiKey" type="password" placeholder="sk-or-..." />
+      </div>
+
+      <div class="field">
+        <label for="model">Model</label>
+        <input id="model" type="text" value="openai/gpt-4o-mini" />
+      </div>
+
+      <button id="solveBtn">Solve &amp; Next</button>
+
+      <div class="status" id="statusArea">
+        <div><strong>Question:</strong> <span id="questionPreview">-</span></div>
+        <div><strong>AI Answer:</strong> <span id="aiAnswer">-</span></div>
+        <div><strong>Clicked:</strong> <span id="clickedAnswer">-</span></div>
+      </div>
+
+      <div class="log" id="logArea"></div>
+
+      <div class="tip">
+        Tip: If nothing is detected, press F12, inspect the question element, and add its class to the top of the selector arrays in content.js
+      </div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
