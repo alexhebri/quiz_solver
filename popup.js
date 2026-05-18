@@ -58,14 +58,35 @@
     });
   }
 
+  // Extracts the required answer count from hints like "(Choose 2)", "(Select 3)", "(Choose three answers)", etc.
+  function parseRequiredCount(question) {
+    var wordMap = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+    // Match digit form: (Choose 2), (Select 3 answers), (Choose Two Answers), etc.
+    var m = String(question).match(/\b(?:choose|select|pick)\s+(\d+|\w+)/i);
+    if (m) {
+      var raw = m[1].toLowerCase();
+      if (wordMap[raw]) { return wordMap[raw]; }
+      var n = parseInt(raw, 10);
+      if (!isNaN(n)) { return n; }
+    }
+    return null;
+  }
+
   function buildPrompt(question, choices, isMultiSelect) {
     var list = choices.map(function (choice, idx) {
       return (idx + 1) + ". " + choice;
     }).join("\n");
 
-    var formatRule = isMultiSelect
-      ? "- This is a MULTIPLE CORRECT ANSWERS question. Reply with ONLY the numbers of ALL correct answers separated by commas, e.g.: 1,3 or 2,4,5. Nothing else."
-      : "- Reply with ONLY the number of the correct answer. Nothing else.\n- No explanation, no punctuation, no extra words. Just a single digit like: 2";
+    var formatRule;
+    if (isMultiSelect) {
+      var requiredCount = parseRequiredCount(question);
+      var countClause = requiredCount
+        ? "You MUST return EXACTLY " + requiredCount + " numbers."
+        : "Return ALL correct answer numbers.";
+      formatRule = "- This is a MULTIPLE CORRECT ANSWERS question. " + countClause + " Reply with ONLY those numbers separated by commas, e.g.: 1,3 or 2,4,5. Nothing else.";
+    } else {
+      formatRule = "- Reply with ONLY the number of the correct answer. Nothing else.\n- No explanation, no punctuation, no extra words. Just a single digit like: 2";
+    }
 
     return {
       system: "You are an Oracle technology expert with deep knowledge of:\n- SQL and PL/SQL (Oracle Database syntax specifically, not generic SQL)\n- Java programming (SE and EE)\n- Oracle Database concepts (architecture, storage, memory, transactions)\n- Oracle APEX (Application Express)\n- Oracle Cloud Infrastructure (OCI)\n- Database design and normalization\n- Data types, constraints, indexes, views, sequences, synonyms\n- Oracle-specific functions and behavior\n\nYou are answering multiple choice quiz questions from Oracle Academy.\n\nRules:\n" + formatRule + "\n- For True/False questions: 1 = True, 2 = False (unless the choices show otherwise)\n- When two answers seem close, pick the one that matches Oracle's official documentation and terminology exactly\n- Oracle syntax and behavior often differs from standard SQL — always prefer Oracle-specific answers\n- Never leave a blank — if unsure, pick the most technically precise option",
@@ -88,7 +109,7 @@
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user }
         ],
-        max_tokens: 20,
+        max_tokens: 1024,
         temperature: 0
       })
     }).then(function (res) {
@@ -102,8 +123,28 @@
   }
 
   function parseAnswerNumbers(text) {
-    // Extract all integers from the AI response (handles "1", "2,4", "1, 3, 5", etc.)
-    var matches = String(text || "").match(/\d+/g);
+    var cleaned = String(text || "");
+
+    // Strip DeepSeek R1 / other CoT think blocks: <think>...</think>
+    cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "");
+
+    // Find the last non-empty line — models typically put the final answer last
+    var lines = cleaned.split(/\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+    var answerLine = "";
+    for (var i = lines.length - 1; i >= 0; i--) {
+      // Accept lines that are only digits, commas, and spaces (e.g. "2" or "1, 3" or "2,4")
+      if (/^[\d,\s]+$/.test(lines[i])) {
+        answerLine = lines[i];
+        break;
+      }
+    }
+
+    // Fallback: grab all digits anywhere in the cleaned text
+    if (!answerLine) {
+      answerLine = cleaned;
+    }
+
+    var matches = answerLine.match(/\d+/g);
     if (!matches || matches.length === 0) {
       return null;
     }
