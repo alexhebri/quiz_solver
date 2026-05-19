@@ -9,6 +9,14 @@
   var clickedAnswer = document.getElementById("clickedAnswer");
   var logArea = document.getElementById("logArea");
   var statusArea = document.getElementById("statusArea");
+  var logToggle = document.getElementById("logToggle");
+  var logCount = document.getElementById("logCount");
+  var logActions = document.getElementById("logActions");
+  var exportBtn = document.getElementById("exportBtn");
+  var clearBtn = document.getElementById("clearBtn");
+
+  var LOG_KEY = "quiz_solver_log";
+  var LOG_ENABLED_KEY = "quiz_solver_log_enabled";
 
   function setLog(message, isError) {
     logArea.textContent = message || "";
@@ -30,6 +38,50 @@
     var savedModel = localStorage.getItem("openrouter_model") || "openai/gpt-4o-mini";
     apiKeyInput.value = savedKey;
     modelInput.value = savedModel;
+  }
+
+  // ── Q&A Log helpers ──────────────────────────────────────────────
+
+  function getLog() {
+    try { return JSON.parse(localStorage.getItem(LOG_KEY) || "[]"); } catch (e) { return []; }
+  }
+
+  function updateLogUI() {
+    var entries = getLog();
+    logCount.textContent = entries.length;
+    var enabled = logToggle.checked;
+    logActions.classList.toggle("visible", enabled && entries.length > 0);
+  }
+
+  function appendToLog(question, choices, answerIndices, clickedText) {
+    if (!logToggle.checked) { return; }
+    var entries = getLog();
+    entries.push({
+      question: question,
+      choices: choices,
+      aiAnswerIndices: answerIndices,
+      clickedAnswers: clickedText
+    });
+    localStorage.setItem(LOG_KEY, JSON.stringify(entries));
+    updateLogUI();
+  }
+
+  function exportLog() {
+    var entries = getLog();
+    if (entries.length === 0) { return; }
+    var blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "quiz_log_" + new Date().toISOString().slice(0, 10) + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function clearLog() {
+    if (!confirm("Clear all " + getLog().length + " saved questions?")) { return; }
+    localStorage.removeItem(LOG_KEY);
+    updateLogUI();
   }
 
   function getActiveTab() {
@@ -213,6 +265,9 @@
 
       clickedAnswer.textContent = truncate(selectResult.clickedText, 120);
 
+      // Save to Q&A log if enabled
+      appendToLog(data.question, data.choices, answerNumbers, selectResult.clickedText);
+
       await new Promise(function (resolve) {
         setTimeout(resolve, 1500);
       });
@@ -234,5 +289,14 @@
   apiKeyInput.addEventListener("change", saveSettings);
   modelInput.addEventListener("change", saveSettings);
 
+  logToggle.addEventListener("change", function () {
+    localStorage.setItem(LOG_ENABLED_KEY, logToggle.checked ? "1" : "0");
+    updateLogUI();
+  });
+  exportBtn.addEventListener("click", exportLog);
+  clearBtn.addEventListener("click", clearLog);
+
   loadSettings();
+  logToggle.checked = localStorage.getItem(LOG_ENABLED_KEY) === "1";
+  updateLogUI();
 })();
