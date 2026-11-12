@@ -9,6 +9,7 @@
   var clickedAnswer = document.getElementById("clickedAnswer");
   var logArea = document.getElementById("logArea");
   var statusArea = document.getElementById("statusArea");
+  var autoRunToggle = document.getElementById("autoRunToggle");
   var logToggle = document.getElementById("logToggle");
   var logCount = document.getElementById("logCount");
   var logActions = document.getElementById("logActions");
@@ -17,6 +18,7 @@
 
   var LOG_KEY = "quiz_solver_log";
   var LOG_ENABLED_KEY = "quiz_solver_log_enabled";
+  var runInProgress = false;
 
   function setLog(message, isError) {
     logArea.textContent = message || "";
@@ -108,6 +110,30 @@
         resolve(response);
       });
     });
+  }
+
+  function isConnectionError(error) {
+    return error && /receiving end does not exist|could not establish connection/i.test(error.message || "");
+  }
+
+  async function sendMessageWhenReady(tabId, message, attempts) {
+    var remaining = attempts || 50;
+    var lastError;
+    while (remaining > 0) {
+      try {
+        return await sendMessageToTab(tabId, message);
+      } catch (error) {
+        lastError = error;
+        if (!isConnectionError(error)) {
+          throw error;
+        }
+        await new Promise(function (resolve) {
+          setTimeout(resolve, 300);
+        });
+        remaining -= 1;
+      }
+    }
+    throw lastError || new Error("Could not connect to the quiz page.");
   }
 
   // Extracts the required answer count from hints like "(Choose 2)", "(Select 3)", "(Choose three answers)", etc.
@@ -217,75 +243,144 @@
     solveBtn.disabled = isBusy;
   }
 
+  function questionSignature(data) {
+    return JSON.stringify({
+      question: data.question,
+      choices: data.choices
+    });
+  }
+
+  async function waitForNextQuestion(tabId, previousSignature) {
+    var attempts = 0;
+    while (attempts < 50) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 300);
+      });
+
+      var data;
+      try {
+        data = await sendMessageWhenReady(tabId, { type: "getQuestion" }, 1);
+      } catch (error) {
+        if (!isConnectionError(error)) {
+          throw error;
+        }
+        attempts += 1;
+        continue;
+      }
+      if (data && data.question && data.choices && data.choices.length > 0 &&
+          questionSignature(data) !== previousSignature) {
+        return true;
+      }
+      attempts += 1;
+    }
+
+    return false;
+  }
+
+  async function solveOnce() {
+    var apiKey = apiKeyInput.value.trim();
+    var model = modelInput.value.trim();
+    if (!apiKey) {
+      throw new Error("Please enter your OpenRouter API key.");
+    }
+
+    var tab = await getActiveTab();
+    if (!tab || !tab.id) {
+      throw new Error("No active tab found.");
+    }
+
+    var data = await sendMessageWhenReady(tab.id, { type: "getQuestion" });
+    if (!data || !data.question || !data.choices || data.choices.length === 0) {
+      throw new Error("No question found. Make sure the quiz is visible.");
+    }
+    var previousQuestionSignature = questionSignature(data);
+
+    questionPreview.textContent = truncate(data.question, 140);
+
+    var prompt = buildPrompt(data.question, data.choices, data.isMultiSelect);
+    var result = await callOpenRouter(apiKey, model, prompt);
+    var content = result && result.choices && result.choices[0] && result.choices[0].message
+      ? result.choices[0].message.content
+      : "";
+
+    var answerNumbers = parseAnswerNumbers(content);
+    if (!answerNumbers) {
+      throw new Error("Could not parse an answer number from the AI response.");
+    }
+
+    aiAnswer.textContent = answerNumbers.join(", ");
+
+    var selectResult = await sendMessageWhenReady(tab.id, {
+      type: "selectAnswer",
+      indices: answerNumbers
+    });
+
+    if (!selectResult || !selectResult.ok) {
+      throw new Error("Could not click the answer choice.");
+    }
+
+    clickedAnswer.textContent = truncate(selectResult.clickedText, 120);
+    appendToLog(data.question, data.choices, answerNumbers, selectResult.clickedText);
+
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 1500);
+    });
+
+    var nextResult;
+    try {
+      nextResult = await sendMessageToTab(tab.id, { type: "nextQuestion" });
+    } catch (error) {
+      if (!isConnectionError(error)) {
+        throw error;
+      }
+      nextResult = { ok: true };
+    }
+    if (!nextResult || !nextResult.ok) {
+      return false;
+    }
+
+    if (!await waitForNextQuestion(tab.id, previousQuestionSignature)) {
+      throw new Error("Next was clicked, but the next question did not load.");
+    }
+
+    return true;
+  }
+
   async function onSolve() {
+    if (runInProgress) {
+      return;
+    }
+
+    runInProgress = true;
     try {
       setBusy(true);
       setLog("Working...", false);
       saveSettings();
 
-      var apiKey = apiKeyInput.value.trim();
-      var model = modelInput.value.trim();
-      if (!apiKey) {
-        throw new Error("Please enter your OpenRouter API key.");
-      }
-
-      var tab = await getActiveTab();
-      if (!tab || !tab.id) {
-        throw new Error("No active tab found.");
-      }
-
-      var data = await sendMessageToTab(tab.id, { type: "getQuestion" });
-      if (!data || !data.question || !data.choices || data.choices.length === 0) {
-        throw new Error("No question found. Make sure the quiz is visible.");
-      }
-
-      questionPreview.textContent = truncate(data.question, 140);
-
-      var prompt = buildPrompt(data.question, data.choices, data.isMultiSelect);
-      var result = await callOpenRouter(apiKey, model, prompt);
-      var content = result && result.choices && result.choices[0] && result.choices[0].message
-        ? result.choices[0].message.content
-        : "";
-
-      var answerNumbers = parseAnswerNumbers(content);
-      if (!answerNumbers) {
-        throw new Error("Could not parse an answer number from the AI response.");
-      }
-
-      aiAnswer.textContent = answerNumbers.join(", ");
-
-      var selectResult = await sendMessageToTab(tab.id, {
-        type: "selectAnswer",
-        indices: answerNumbers
-      });
-
-      if (!selectResult || !selectResult.ok) {
-        throw new Error("Could not click the answer choice.");
-      }
-
-      clickedAnswer.textContent = truncate(selectResult.clickedText, 120);
-
-      // Save to Q&A log if enabled
-      appendToLog(data.question, data.choices, answerNumbers, selectResult.clickedText);
-
-      await new Promise(function (resolve) {
-        setTimeout(resolve, 1500);
-      });
-
-      var nextResult = await sendMessageToTab(tab.id, { type: "nextQuestion" });
-      if (!nextResult || !nextResult.ok) {
-        setLog("Answer clicked, but Next button was not found.", true);
-      } else {
-        setLog("Done. Ready for next question.", false);
-      }
+      do {
+        var advanced = await solveOnce();
+        if (!advanced) {
+          setLog("Answer clicked, but Next button was not found.", true);
+          break;
+        }
+        setLog(autoRunToggle.checked ? "Auto run: next question..." : "Done. Ready for next question.", false);
+      } while (autoRunToggle.checked);
     } catch (err) {
       setLog(err.message || "Unexpected error.", true);
     } finally {
       setBusy(false);
+      runInProgress = false;
     }
   }
 
   solveBtn.addEventListener("click", onSolve);
+  autoRunToggle.addEventListener("change", function () {
+    if (autoRunToggle.checked) {
+      onSolve();
+    } else if (solveBtn.disabled) {
+      setLog("Auto run stopped. The current request will finish.", false);
+    }
+  });
   apiKeyInput.addEventListener("change", saveSettings);
   modelInput.addEventListener("change", saveSettings);
 
