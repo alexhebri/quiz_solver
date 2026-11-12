@@ -35,7 +35,7 @@
 
   function loadSettings() {
     var savedKey = localStorage.getItem("openrouter_api_key") || "";
-    var savedModel = localStorage.getItem("openrouter_model") || "openai/gpt-4o-mini";
+    var savedModel = localStorage.getItem("openrouter_model") || "deepseek/deepseek-v4.1-flash-1017";
     apiKeyInput.value = savedKey;
     modelInput.value = savedModel;
   }
