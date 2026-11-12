@@ -1,10 +1,11 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "Hebri Oracle Quiz Solver",
   "version": "1.0.0",
   "description": "Solve Oracle Academy quiz questions one at a time using OpenRouter.",
   "permissions": ["activeTab", "storage"],
-  "browser_action": {
+  "host_permissions": ["https://openrouter.ai/*"],
+  "action": {
     "default_title": "Hebri Oracle Quiz Solver",
     "default_popup": "popup.html"
   },
